@@ -11,7 +11,7 @@
    other files, you'll have to create a file "foobarobject.h"; see
    intobject.h for an example.
    
-   gcc -c -I/System/Library/Frameworks/Python.framework/Versions/Current/include/python2.7 -o rc4module.o rc4module.c
+   gcc -c -I/System/Library/Frameworks/Python.framework/Versions/Current/include/python2.7 -o rc4module.o rc4module.c && \
    gcc -shared -L/System/Library/Frameworks/Python.framework/Versions/Current/lib/python2.7 -lpython -o rc4module.so rc4module.o
    */
 
