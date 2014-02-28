@@ -5,6 +5,8 @@ import types
 import urllib
 import crcmod
 
+import rc4
+
 from math import ceil
 
 # crc_original = crcmod.predefined.Crc('crc-64')
@@ -71,17 +73,30 @@ def processText(txt):
     hashes = NUM_HASHES * [1.0e100]
     if SHOW_TIMING:
         print '{0} shingles'.format(N - SHINGLE_SIZE)
-        T = time.time()
-    for j in range(N - SHINGLE_SIZE):
+    if USE_RC4:
+        prepared_hashes = []
         for i in range(NUM_HASHES):
-            if USE_RC4:
-                H = RC4Hash()
+            H = rc4.new()
+            H.update(5 * [i % 256, (i + 17) % 256, (i + 34) % 256, (i + 51) % 256])
+            prepared_hashes.append(H)
+        if SHOW_TIMING:
+            T = time.time()
+        for j in range(N - SHINGLE_SIZE):
+            for i in range(NUM_HASHES):
+                H = prepared_hashes[i].copy()
                 update = H.update
-                update(5 * [i % 256])
                 for k in range(j, j + SHINGLE_SIZE):
                     update(tokens[k])
-                hashes[i] = min(hashes[i], H.intdigest())
-            else:
+                digest = H.digest()
+                H = 0
+                for x in digest:
+                    H = (H << 8) + x
+                hashes[i] = min(hashes[i], H)
+            if j > 0 and (j % 1000) == 0:
+                print j, time.time() - T
+    else:
+        for j in range(N - SHINGLE_SIZE):
+            for i in range(NUM_HASHES):
                 H = crcmod.predefined.Crc('crc-64')
                 update = H.update
                 update(5 * chr(i % 256))
