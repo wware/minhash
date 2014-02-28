@@ -74,13 +74,28 @@ Rc4_copy(Rc4Object *self, PyObject *args)
 static PyObject *
 Rc4_update(Rc4Object *self, PyObject *args)
 {
-    PyObject *lst;
+    PyObject *lst, *z;
     int i, j, n, t, x;
+    char bleh[1000];
 
     j = self->j;
     if (PyArg_ParseTuple(args, "O", &lst)) {
+        if (!PyList_Check(lst)) {
+            /* so maybe it's a string, and if so, pull out ascii characters - TODO */
+            lst = PyObject_Repr(lst);
+            sprintf(bleh, "Expected list, not %s", PyString_AsString(lst));
+            PyErr_SetString(PyExc_RuntimeError, bleh);
+            return NULL;
+        }
         n = PyList_Size(lst);
         for (i = 0; i < 256; i++) {
+            z = PyList_GetItem(lst, i % n);
+            if (!PyInt_Check(z)) {
+                z = PyObject_Repr(z);
+                sprintf(bleh, "Expected int, not %s", PyString_AsString(z));
+                PyErr_SetString(PyExc_RuntimeError, bleh);
+                return NULL;
+            }
             x = (int) PyInt_AsLong(PyList_GetItem(lst, i % n));
             j = (j + self->S[i] + x) % 256;
             t = self->S[j];
@@ -99,7 +114,7 @@ Rc4_digest(Rc4Object *self, PyObject *args)
 {
     int i, j, k, t, n;
     PyObject *result;
-    if (!PyArg_ParseTuple(args, ":demo"))
+    if (!PyArg_ParseTuple(args, ""))
         return NULL;
     result = PyList_New(0);
     i = j = 0;
@@ -110,7 +125,8 @@ Rc4_digest(Rc4Object *self, PyObject *args)
         self->S[i] = self->S[j];
         self->S[j] = t;
         t = (self->S[i] + self->S[j]) % 256;
-        PyList_Append(result, PyInt_FromLong(self->S[t]));
+        t = self->S[t];
+        PyList_Append(result, PyInt_FromLong(t));
     }
     return result;
 }
