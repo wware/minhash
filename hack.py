@@ -1,40 +1,97 @@
 import re
 import sys
 import time
+import types
 import urllib
 import crcmod
 
-crc_original = crcmod.predefined.Crc('crc-64')
+from math import ceil
+
+# crc_original = crcmod.predefined.Crc('crc-64')
 # crc_original = crcmod.predefined.Crc('crc-32')
 
+class RC4Hash:
+
+    def __init__(self):
+        self.S = [i for i in range(256)]
+        self.j = 0
+
+    def copy(self):
+        r = RC4Hash()
+        r.S, r.j = self.S[:], self.j
+        return r
+
+    def update(self, bytes):
+        S, j, N = self.S, self.j, len(bytes)
+        longbytes = int(ceil(256.0/N)) * bytes
+        i = 0
+        while i < 256:
+            j = (j + S[i] + longbytes[i]) % 256
+            S[i], S[j] = S[j], S[i]
+            i += 1
+        self.j = j
+
+    def digest(self, n=16):
+        S = self.S
+        i = j = 0
+        result = []
+        for k in range(n):
+            i = (i + 1) % 256
+            j = (j + S[i]) % 256
+            S[i], S[j] = S[j], S[i]
+            t = (S[i] + S[j]) % 256
+            result.append(S[t])
+        return result
+
+    def intdigest(self, n=16):
+        result = 0
+        for x in self.digest(n):
+            result = (result << 8) + x
+        return result
+
+    def hexdigest(self, n=16):
+        return hex(self.intdigest(n))[2:]
+
+USE_RC4 = True
+
 size_arg = filter(lambda x: x.startswith('size='), sys.argv[1:])
-SHINGLE_SIZE = size_arg and int(size_arg(5:]) or 2
-SHOW_TIMING = True
+hashes_arg = filter(lambda x: x.startswith('hashes='), sys.argv[1:])
+
+SHINGLE_SIZE = size_arg and int(size_arg[0][5:]) or 2
+NUM_HASHES = hashes_arg and int(hashes_arg[0][7:]) or 100
+SHOW_TIMING = 'timing' in sys.argv[1:]
 
 def processText(txt):
     tokens = re.sub('[ \t,..]+', ' ', txt).split()
+    N = len(tokens)
+    if USE_RC4:
+        tokens = dict(map(lambda pair: (pair[0], map(ord, pair[1])), enumerate(tokens)))
+    else:
+        tokens = dict(enumerate(tokens))
+    hashes = NUM_HASHES * [1.0e100]
     if SHOW_TIMING:
+        print '{0} shingles'.format(N - SHINGLE_SIZE)
         T = time.time()
-    shingles = []
-    for j in range(len(tokens) - SHINGLE_SIZE):
-        shingles.append(' '.join(tokens[j:j+SHINGLE_SIZE]))
+    for j in range(N - SHINGLE_SIZE):
+        for i in range(NUM_HASHES):
+            if USE_RC4:
+                H = RC4Hash()
+                update = H.update
+                update(5 * [i % 256])
+                for k in range(j, j + SHINGLE_SIZE):
+                    update(tokens[k])
+                hashes[i] = min(hashes[i], H.intdigest())
+            else:
+                H = crcmod.predefined.Crc('crc-64')
+                update = H.update
+                update(5 * chr(i % 256))
+                for k in range(j, j + SHINGLE_SIZE):
+                    update(tokens[k])
+                hashes[i] = min(hashes[i], int(H.hexdigest(), 16))
+        if j > 0 and (j % 100) == 0:
+            print j, time.time() - T
     if SHOW_TIMING:
-        print '{0} shingles found in {1} seconds'.format(len(shingles, time.time() - T))
-        T = time.time()
-    prefixes = [(5 * chr(i)) + ' ' for i in range(100)]
-    hashes = []
-    for i in range(100):
-        prefix = prefixes[i]
-        h = None
-        for shingle in shingles:
-            crc = crc_original.copy()
-            crc.update(prefix)
-            crc.update(shingle)
-            H = int(crc.hexdigest(), 16)
-            h = (h is None) and H or min(h, H)
-        hashes.append(h)
-    if SHOW_TIMING:
-        print 'hashes done in {0} seconds'.format(time.time() - T)
+        print '{0} seconds for hashing'.format(time.time() - T)
     return hashes
 
 def fetchHtml(url):
@@ -66,11 +123,12 @@ def hackRelated(proc1, proc2):
                      map(lambda x, y: x == y and 1 or 0, proc1[1], proc2[1]))
     return (proc1[0], proc2[0], related)
 
+things = []
 if 'animals' in sys.argv[1:]:
     things = [
         wikipedia('Dog'),
-        wikipedia('Cat'),
         wikipedia('Wolf'),
+        wikipedia('Cat'),
         wikipedia('Frog'),
         wikipedia('Toad')
     ]
